@@ -2,7 +2,9 @@ package controllers
 
 import (
 	"net/http"
+	"time"
 
+	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 	"github.com/jokopriyono/basic-go-auth/models"
 	"github.com/jokopriyono/basic-go-auth/utils"
@@ -32,4 +34,44 @@ func SignUp(c *gin.Context) {
 	}
 	models.DB.Create(&user)
 	c.JSON(http.StatusCreated, gin.H{"message": "User created successfully"})
+}
+
+func Login(c *gin.Context) {
+	var user models.User
+	if err := c.ShouldBindJSON(&user); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var existingUser models.User
+	models.DB.Where("email = ?", user.Email).First(&existingUser)
+	if existingUser.ID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email or password"})
+		return
+	}
+	errHash := utils.CompareHashPassword(user.Password, existingUser.Password)
+	if !errHash {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid email or password"})
+		return
+	}
+
+	expirationTime := time.Now().Add(5 * time.Minute)
+	claims := &models.Claims{
+		Role: existingUser.Role,
+		StandardClaims: jwt.StandardClaims{
+			Subject:   existingUser.Email,
+			ExpiresAt: expirationTime.Unix(),
+		},
+	}
+
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+
+	tokenString, err := token.SignedString(jwtKey)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Could not generate token"})
+		return
+	}
+
+	c.SetCookie("token", tokenString, int(expirationTime.Unix()), "/", "localhost", false, true)
+	c.JSON(http.StatusOK, gin.H{"token": tokenString})
 }
