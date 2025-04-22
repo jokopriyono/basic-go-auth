@@ -10,7 +10,7 @@ import (
 	"github.com/jokopriyono/basic-go-auth/utils"
 )
 
-var jwtKey = []byte("dummysecretkey")
+var jwtKey []byte
 
 func SignUp(c *gin.Context) {
 	var user models.User
@@ -37,6 +37,8 @@ func SignUp(c *gin.Context) {
 }
 
 func Login(c *gin.Context) {
+	jwtKey = []byte(models.ENV.JWTSecretKey)
+
 	var user models.User
 	if err := c.ShouldBindJSON(&user); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -74,4 +76,47 @@ func Login(c *gin.Context) {
 
 	c.SetCookie("token", tokenString, int(expirationTime.Unix()), "/", "localhost", false, true)
 	c.JSON(http.StatusOK, gin.H{"token": tokenString})
+}
+
+func Home(c *gin.Context) {
+	jwtKey = []byte(models.ENV.JWTSecretKey)
+
+	cookie, err := c.Cookie("token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	claims, err := utils.ParseToken(cookie)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	if claims.Role != "user" && claims.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Welcome to the home page", "role": claims.Role})
+}
+
+func Admin(c *gin.Context) {
+	cookie, err := c.Cookie("token")
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	claims, err := utils.ParseToken(cookie)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+	if claims.Role != "admin" {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Forbidden"})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "Welcome to the admin page", "role": claims.Role})
+}
+
+func Logout(c *gin.Context) {
+	c.SetCookie("token", "", -1, "/", "localhost", false, true)
+	c.JSON(http.StatusOK, gin.H{"message": "Logged out successfully"})
 }
